@@ -1,0 +1,83 @@
+name: Check and sync upstream updates
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'  # Every Monday at 9 AM UTC
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Check for upstream updates
+        id: check
+        run: |
+          git remote add upstream https://github.com/Airtable/interface-extensions-hello-world-typescript.git
+          git fetch upstream
+
+          # Count commits ahead/behind
+          BEHIND=$(git rev-list --count HEAD..upstream/main)
+
+          if [ "$BEHIND" -eq 0 ]; then
+            echo "Already up to date with upstream"
+            echo "has_updates=false" >> $GITHUB_OUTPUT
+          else
+            echo "Upstream has $BEHIND new commit(s)"
+            echo "has_updates=true" >> $GITHUB_OUTPUT
+            echo "commit_count=$BEHIND" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Attempt merge and create PR
+        if: steps.check.outputs.has_updates == 'true'
+        id: merge
+        run: |
+          BRANCH="sync-upstream-$(date +%Y%m%d)"
+          git checkout -b "$BRANCH"
+
+          # Attempt the merge
+          if git merge upstream/main --no-edit; then
+            echo "merge_success=true" >> $GITHUB_OUTPUT
+            echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+            git push origin "$BRANCH"
+          else
+            echo "merge_success=false" >> $GITHUB_OUTPUT
+            git merge --abort
+          fi
+
+      - name: Create PR for clean merge
+        if: steps.check.outputs.has_updates == 'true' && steps.merge.outputs.merge_success == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '🔄 Sync upstream template updates',
+              head: '${{ steps.merge.outputs.branch }}',
+              base: 'main',
+              body: `## Upstream Sync\n\nThe Airtable template repository has **${{ steps.check.outputs.commit_count }}** new commit(s).\n\nThis PR merges those changes cleanly. Please review before merging.\n\n### Upstream repo\nhttps://github.com/Airtable/interface-extensions-hello-world-typescript`
+            });
+            console.log(`Created PR #${pr.data.number}`);
+
+      - name: Create issue for merge conflicts
+        if: steps.check.outputs.has_updates == 'true' && steps.merge.outputs.merge_success == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '⚠️ Upstream updates require manual merge',
+              body: `## Merge Conflicts Detected\n\nThe Airtable template has **${{ steps.check.outputs.commit_count }}** new commit(s), but they conflict with your customizations.\n\n### To resolve locally:\n\`\`\`bash\ncd ~/Documents/"Code Projects"/templates/airtable-extension-template\ngit fetch upstream\ngit merge upstream/main\n# Resolve conflicts in your editor\ngit add .\ngit commit\ngit push\n\`\`\`\n\n### Upstream repo\nhttps://github.com/Airtable/interface-extensions-hello-world-typescript`,
+              labels: ['upstream-sync']
+            });

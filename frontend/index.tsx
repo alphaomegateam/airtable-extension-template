@@ -1,10 +1,11 @@
 import {initializeBlock} from '@airtable/blocks/interface/ui';
 import './style.css';
+import {AlphaOmegaFooter} from './components/AlphaOmegaFooter';
 
 function HelloWorldTypescriptApp() {
     // YOUR CODE GOES HERE
     return (
-        <div className="p-4 sm:p-8 min-h-screen relative bg-gray-gray50 dark:bg-gray-gray800">
+        <div className="p-4 sm:p-8 pb-12 min-h-screen relative bg-gray-gray50 dark:bg-gray-gray800">
             <div
                 className="rounded-lg p-6 sm:p-12 max-w-lg mx-auto text-center mt-10 sm:mt-20
             bg-white shadow-xl
@@ -41,6 +42,7 @@ function HelloWorldTypescriptApp() {
                     />
                 </div>
             </div>
+            <AlphaOmegaFooter />
         </div>
     );
 }

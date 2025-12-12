@@ -6,7 +6,10 @@
     "license": "MIT",
     "scripts": {
         "lint": "eslint --ext .js,.jsx,.ts,.tsx frontend",
-        "typecheck": "tsc --noEmit"
+        "typecheck": "tsc --noEmit",
+        "release:patch": "./scripts/release.sh patch",
+        "release:minor": "./scripts/release.sh minor",
+        "release:major": "./scripts/release.sh major"
     },
     "dependencies": {
         "@airtable/blocks": "interface-alpha",

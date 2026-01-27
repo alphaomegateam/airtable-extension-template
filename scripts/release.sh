@@ -58,7 +58,7 @@ npm version "$VERSION_TYPE" -m "$MESSAGE"
 
 # Deploy to Airtable
 echo "Deploying to Airtable..."
-block release
+echo "$MESSAGE" | block release
 
 echo ""
 echo "Release complete!"

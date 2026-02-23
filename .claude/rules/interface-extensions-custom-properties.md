@@ -7,9 +7,12 @@ trigger: always_on
 
 - Custom properties allow Airtable builders to configure properties of the Interface Extension on
   each Interface page it is used on
-- ALWAYS use custom properties to define required fields from the underlying Airtable data. DO NOT
-  hard-code field names/ids into the source code. Make sure to provide a reasonable `defaultValue`.
-  Also make sure to provide a `shouldFieldBeAllowed` function that returns a boolean indicating whether the field should be allowed.
+- Use custom properties for values that may vary across different implementations or deployments of
+  the extension (e.g., the builder needs to choose which field or table to use). Table and field IDs
+  that are stable and consistent across all implementations of the interface SHOULD be hardcoded
+  directly using `base.getTableByIdIfExists(tableId)` and `table.getFieldIfExists(fieldId)`.
+- When using custom properties for fields, provide a reasonable `defaultValue` and a
+  `shouldFieldBeAllowed` function that returns a boolean indicating whether the field should be allowed.
 - To define custom properties:
     1. Import the `useCustomProperties` hook from `@airtable/blocks/interface/ui`.
     2. Define your properties in a function. This function receives the current `base` and returns
@@ -41,10 +44,13 @@ trigger: always_on
     4. Call `useCustomProperties` with your function. It returns an object with:
         - `customPropertyValueByKey`: a mapping of each property's key to its current value.
         - `errorState`: if present, contains an error from trying to set up custom properties.
-- Custom properties should be used to define values that are required for the Interface Extension to
-  work at all
-- Custom properties should be used to define required fields from the underlying Airtable data, to
-  avoid hard-coding field names into the code of the Interface Extension
+- Custom properties should be used for values that could vary between different implementations or
+  deployments of the extension — i.e., where the builder needs flexibility to choose tables, fields,
+  or configuration values
+- Table IDs and field IDs that are stable across all implementations of the interface should be
+  hardcoded directly rather than exposed as custom properties
+- **When unsure** whether a table or field ID is stable across implementations or could vary, **ask
+  the user** before deciding to hardcode vs. create a custom property
     - Make it easier for builders configuring the custom properties by filtering to only show fields
       with the relevant type (e.g. single select fields, number fields). To do this, within your
       function that is passed to `useCustomProperties`, access the current table using
@@ -57,7 +63,7 @@ trigger: always_on
       custom property
 - ONLY show instructions to configure custom properties in the Interface Extension's UI when those
   custom properties do not have values set for the current page
-- Here is an example of how to use custom properties to avoid hard-coding fields:
+- Here is an example of how to use custom properties for variable/configurable fields:
 
 ```
 import {useCustomProperties} from '@airtable/blocks/interface/ui';
@@ -148,7 +154,8 @@ function MyApp() {
 }
 ```
 
-- Here is an example of how to use custom properties to avoid hard-coding credentials:
+- Here is an example of how to use custom properties for credentials (always use custom properties
+  for secrets — never hardcode them):
 
 ```
 import {useCustomProperties} from '@airtable/blocks/interface/ui';

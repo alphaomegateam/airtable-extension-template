@@ -42,18 +42,19 @@ UI to serve a specific need or use case.
     1. Importing `useBase` and `useRecords` hooks
     2. Calling
        `const base = useBase(); const table = base.getTableById(tableId); const records = useRecords(table);`
-       or use custom properties to let users select tables (recommended)
-- When accessing tables, use custom properties (recommended) or `base.getTableById(tableId)` if you
-  know the table ID (see <reasoning_about_tables> and <working_with_multiple_tables> sections for
-  best practices)
+       or use custom properties to let builders select tables (when table could vary between implementations)
+- When accessing tables, hardcode table IDs directly if they are stable across all implementations,
+  or use custom properties if the table could vary (see <reasoning_about_tables> and
+  <working_with_multiple_tables> sections for best practices)
 - Always use `table.getFieldIfExists(string)` to get a field. May return null if the field was
   deleted or is not visible. Make sure to check for null.
 - DO NOT use `table.getField(string)`, `table.getFieldByName(string)`, or
   `table.getFieldById(string)` as these will throw errors
-- DO NOT pass hard-coded field names to `table.getFieldIfExists(string)`. Use custom properties
-  instead (see <custom_properties>)
-    - Example: `const nameField = table.getFieldIfExists('name');` is WRONG. Use a custom property
-      instead.
+- For fields that are stable across all implementations of the interface, you may hardcode their IDs
+  directly: `const nameField = table.getFieldIfExists('fldXXXXXXXXXX');`
+- For fields that could vary between implementations, use custom properties instead
+  (see <custom_properties>)
+- DO NOT hardcode field **names** — use field IDs or custom properties
 - Always check if field exists before calling `record.getCellValue(field)`. Will throw error if
   field doesn't exist or isn't visible.
 - Cell values for SELECT fields have type `{id: string, name: string, color: string}`. Render the
@@ -106,27 +107,24 @@ UI to serve a specific need or use case.
 
 - Table IDs (e.g., "tblXXXXXXXXXX") are stable and don't change if tables are renamed
 - Table names can change if users rename them, making name-based lookups fragile
-- When the user's instructions mention specific table names (e.g., "Projects", "Tasks", "Sprints"),
-  create table custom properties for each table
+- When table IDs are stable across all implementations of the interface, hardcode them directly
+  using `base.getTableByIdIfExists(tableId)`
+- When the table could vary between implementations, use a table custom property so the builder
+  can select which table to use
 - Use `base.getTableByIdIfExists(tableId)` when you know the table ID, as IDs are more stable
 - Use `base.getTableByNameIfExists(tableName)` when you only have the table name
-- Always access tables via custom properties in your source code, not by hard-coded names or IDs
-- Example workflow: 1. Create table custom properties: `projectsTable`, `tasksTable` 2. Set
-  defaults: `base.getTableByIdIfExists('tblABC123')` if you know the ID, or
-  `base.getTableByNameIfExists('Projects')` as fallback 3. In source code, access via
-  `customPropertyValueByKey.projectsTable` (not `base.getTableByName('Projects')`)
+- DO NOT hardcode table **names** — use table IDs or custom properties
   </reasoning_about_tables>
 
 <working_with_multiple_tables>
 
-- Avoid hardcoding table indices like `base.tables[1]` in your implementation code - use custom
-  properties (recommended) or `base.getTableById(tableId)` if you know the table ID
-- When you need to access tables by position, you can use `base.tables` array, but custom properties
-  are strongly recommended
+- Avoid hardcoding table indices like `base.tables[1]` in your implementation code
 - To access a table by ID: use `base.getTableById(tableId)` or `base.getTableByIdIfExists(tableId)`
   (safer, returns null if not found)
-- ALWAYS use custom properties to allow users to select which tables to use
-- Use the 'table' custom property type to let users configure table selection:
+- When table IDs are stable across all implementations, hardcode them directly with
+  `base.getTableByIdIfExists(tableId)`
+- When tables could vary between implementations, use table custom properties to let builders
+  configure table selection:
     ```javascript
     {
         key: 'projectsTable',
@@ -135,16 +133,16 @@ UI to serve a specific need or use case.
         defaultValue: base.tables.find((table) => table.name.toLowerCase().includes('projects')),
     }
     ```
-- Use custom properties to allow users to select tables, and access them via
-  `customPropertyValueByKey` </working_with_multiple_tables>
+</working_with_multiple_tables>
 
 <custom_properties>
 
 - Custom properties allow Airtable builders to configure properties of the Interface Extension on
   each Interface page it is used on
-- ALWAYS use custom properties to define required fields from the underlying Airtable data. DO NOT
-  hard-code field names/ids into the source code. Make sure to provide a reasonable `defaultValue`.
-  Also make sure to provide `possibleValues` containing fields of the appropriate type(s).
+- Use custom properties for values that may vary across different implementations or deployments of
+  the extension. Table and field IDs that are stable and consistent across all implementations
+  SHOULD be hardcoded directly. When using custom properties for fields, provide a reasonable
+  `defaultValue` and filter with `shouldFieldBeAllowed` to show only appropriate field types.
 - To define custom properties:
     1. Import the `useCustomProperties` hook from `@airtable/blocks/interface/ui`.
     2. Define your properties in a function. This function receives the current `base` and returns
@@ -176,10 +174,13 @@ UI to serve a specific need or use case.
     4. Call `useCustomProperties` with your function. It returns an object with:
         - `customPropertyValueByKey`: a mapping of each property's key to its current value.
         - `errorState`: if present, contains an error from trying to set up custom properties.
-- Custom properties should be used to define values that are required for the Interface Extension to
-  work at all
-- Custom properties should be used to define required fields from the underlying Airtable data, to
-  avoid hard-coding field names into the code of the Interface Extension
+- Custom properties should be used for values that could vary between different implementations or
+  deployments of the extension — i.e., where the builder needs flexibility to choose tables, fields,
+  or configuration values
+- Table IDs and field IDs that are stable across all implementations should be hardcoded directly
+  rather than exposed as custom properties
+- **When unsure** whether a table or field ID is stable across implementations or could vary, **ask
+  the user** before deciding to hardcode vs. create a custom property
     - Make it easier for builders configuring the custom properties by filtering to only show fields
       with the relevant type (e.g. single select fields, number fields). To do this, within your
       function that is passed to `useCustomProperties`, access the current table using
@@ -192,7 +193,7 @@ UI to serve a specific need or use case.
       custom property
 - ONLY show instructions to configure custom properties in the Interface Extension's UI when those
   custom properties do not have values set for the current page
-- Here is an example of how to use custom properties to avoid hard-coding fields:
+- Here is an example of how to use custom properties for variable/configurable fields:
 
 ```
 import {useCustomProperties} from '@airtable/blocks/interface/ui';
@@ -283,7 +284,8 @@ function MyApp() {
 }
 ```
 
-- Here is an example of how to use custom properties to avoid hard-coding credentials:
+- Here is an example of how to use custom properties for credentials (always use custom properties
+  for secrets — never hardcode them):
 
 ```
 import {useCustomProperties} from '@airtable/blocks/interface/ui';

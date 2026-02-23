@@ -56,7 +56,7 @@ block release
 
 - Entry point: `frontend/index.tsx`
 - Uses `initializeBlock()` from `@airtable/blocks/interface/ui`
-- Custom properties configured via `useCustomProperties()` hook
+- Custom properties configured via `useCustomProperties()` hook for variable/configurable values; stable table/field IDs are hardcoded directly
 - Styling: Tailwind CSS with Airtable's color palette
 
 ## Alpha Omega Team Footer

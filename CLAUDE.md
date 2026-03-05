@@ -12,6 +12,7 @@ The following rule files MUST be consulted when developing:
 
 - `.claude/rules/interface-extensions.md` - Core API documentation and patterns
 - `.claude/rules/interface-extensions-custom-properties.md` - Custom properties API guide
+- `.claude/rules/performance.md` - Performance optimization rules (React.memo, memoization, data processing)
 - `.claude/rules/alphaomega-team.md` - Alpha Omega Team specific rules (select pill rendering, linked record labels)
 
 ## Airtable Blocks CLI

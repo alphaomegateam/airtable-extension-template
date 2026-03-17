@@ -53,6 +53,13 @@ npm run typecheck
 block release
 ```
 
+## Release Flow
+
+1. Commit your changes and push to the remote
+2. Run `npm run release:patch`, `npm run release:minor`, or `npm run release:major`
+3. The release script prompts for a message — pipe it in: `echo "your message" | npm run release:minor`
+4. The script bumps the version, deploys to Airtable via `block release`, and tags the release
+
 ## Architecture Notes
 
 - Entry point: `frontend/index.tsx`

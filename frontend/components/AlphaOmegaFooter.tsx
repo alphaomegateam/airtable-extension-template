@@ -1,4 +1,5 @@
-import { version } from "../../package.json";
+import pkg from "../../package.json";
+const version = pkg.version;
 import { LOGO_DATA_URL } from "../assets/logo";
 
 /**

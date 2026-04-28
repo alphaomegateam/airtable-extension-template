@@ -5,179 +5,90 @@ trigger: always_on
 
 # Performance Rules for Airtable Interface Extensions
 
-Extensions are often embedded **multiple times** on a single Airtable Interface page. Each instance
-runs its own React tree. These rules prevent the N-instance multiplier from causing slow renders.
+Extensions are often embedded **multiple times** on a single Interface page, and each
+`useRecords(table)` subscription fires on **any** cell edit in the table — there is no field-level
+filter. Every record update re-renders every instance. All performance work happens inside the
+render path.
 
-## Critical Constraint: `useRecords()` Has No Field Filtering
+## The `React.memo` + Airtable `Record` Footgun
 
-The Interface Extensions SDK `useRecords(table)` accepts only a `Table` argument — no `fields`
-option. Every widget instance subscribes to **all** record changes across **all** columns in each
-table it reads. This means:
+**Never wrap a component in `React.memo` if it accepts an Airtable `Record` (or
+`readonly Record[]`) as a prop and reads cell values from it.**
 
-- Any cell edit in the table triggers a re-render in every instance
-- You cannot reduce the subscription surface at the data layer
-- **All performance gains must come from minimizing what happens during re-renders**
+`Record` instances are mutated in place — their reference stays the same when cell values change.
+`memo`'s shallow compare returns `true`, the child skips its re-render, and the UI shows stale
+values forever (remounting the parent does not help — the stale cache lives on the `Record`).
 
-## Required Patterns
+### The rule
 
-### 1. Wrap all leaf/child components with `React.memo`
-
-Every component that receives props from a parent must be wrapped in `memo()`. This prevents
-cascade re-renders when Airtable pushes a record update.
+- **Components that read cell values from a `Record` prop:** plain function components, no `memo`.
+- **Leaf components with primitive props** (string, number, boolean, …): wrap in `memo`. Primitive
+  equality lines up with React's reference model.
+- If a `Record`-reading component is genuinely expensive and needs `memo`, extract its cell values
+  in the parent via `useMemo` — include the parent's `useRecords()` array in the deps so the memo
+  recomputes on every Airtable tick — and pass primitives down.
 
 ```tsx
-import {memo} from 'react';
-
-export const MyComponent = memo(function MyComponent({data, label}: Props) {
-    return <div>{label}: {data.count}</div>;
+// ❌ BUG — memo bails when `record` is reference-stable but its cells changed
+export const POHeader = memo(function POHeader({record}: {record: AirtableRecord}) {
+    return <div>{record.getCellValueAsString(statusField)}</div>;
 });
+
+// ✅ Drop memo on the Record-reading container
+export function POHeader({record}: {record: AirtableRecord}) {
+    return <StatusBadge status={record.getCellValueAsString(statusField)} />;
+}
+
+// ✅ Or extract primitives upstream and memo the leaf
+const status = useMemo(
+    () => selectedPO?.getCellValueAsString(statusField),
+    [selectedPO, statusField, allPOs], // allPOs ref changes on every Airtable tick
+);
+return <POHeader status={status} />; // POHeader is memo'd, takes a string
 ```
 
-### 2. Memoize all derived arrays and objects
+## Other Required Patterns
 
-Arrays and objects created during render get new references every time, which invalidates
-`useMemo` dependency arrays in child hooks and causes full recomputation.
+### Memoize derived arrays and objects passed as props or hook deps
+
+New array/object literals get a fresh reference every render and invalidate downstream `useMemo`
+and `memo` checks.
 
 ```tsx
-// BAD: new array reference every render — invalidates any downstream useMemo
+// BAD: new reference every render
 const selectedTypes = [type1, type2, type3].filter(Boolean);
 
-// GOOD: stable reference when underlying values haven't changed
+// GOOD
 const selectedTypes = useMemo(
     () => [type1, type2, type3].filter(Boolean),
-    [type1, type2, type3]
+    [type1, type2, type3],
 );
 ```
 
-This is especially critical for arrays/objects passed to `useActivityData` or similar data hooks,
-where an unstable reference forces the entire data processing pipeline to re-run.
+### Define components at module scope, never inside another render
 
-### 3. Extract sub-components outside the render function
+A component defined inside a parent's render body has a new identity each render — React
+unmounts and remounts the entire subtree.
 
-Components defined inside a parent's render body get new identities every render, defeating
-React's reconciliation (the entire subtree unmounts and remounts).
-
-```tsx
-// BAD: new component identity every render
-function ParentComponent() {
-    const StatusBadge = ({status}: {status: string}) => (
-        <span>{status}</span>
-    );
-    return <StatusBadge status="active" />;
-}
-
-// GOOD: stable component identity
-function StatusBadge({status}: {status: string}) {
-    return <span>{status}</span>;
-}
-
-function ParentComponent() {
-    return <StatusBadge status="active" />;
-}
-```
-
-### 4. Memoize expensive computations (sorting, filtering, aggregation)
-
-Any operation that processes the full record set must be inside `useMemo` with a precise
-dependency array.
+### Memoize expensive computations over the record set
 
 ```tsx
-const sortedUsers = useMemo(() => {
-    return [...users].sort((a, b) => a.name.localeCompare(b.name));
-}, [users, sortField, sortDirection]);
+const sortedUsers = useMemo(
+    () => [...users].sort((a, b) => a.name.localeCompare(b.name)),
+    [users, sortField, sortDirection],
+);
 ```
 
-### 5. Stabilize callbacks with `useCallback`
+When the loop is hot: use `Set` for O(1) lookups, hoist loop-invariant values out of the loop,
+and combine passes instead of chaining `filter`/`map`/`reduce`.
 
-Event handlers passed as props should use `useCallback` to maintain stable references. This works
-in tandem with `React.memo` on child components.
+### Stabilize callbacks passed to memo'd children
 
 ```tsx
-const handleSort = useCallback((field: SortField) => {
-    setSortField((prev) => {
-        if (prev === field) {
-            setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'));
-            return prev;
-        }
-        setSortDirection('asc');
-        return field;
-    });
-}, []);
+const handleSort = useCallback((field: SortField) => { /* … */ }, []);
 ```
 
-### 6. Call all hooks before any early returns
+### Pure helpers belong at module scope
 
-React hooks must be called in the same order every render. Extract values from hooks before
-conditional returns — even if those values are only used after the condition.
-
-```tsx
-function MyWidget() {
-    const base = useBase();
-    const {customPropertyValueByKey, errorState} = useCustomProperties(getCustomProperties);
-
-    // Extract values and call useMemo BEFORE any early returns
-    const derivedValue = useMemo(() => /* ... */, [dep1, dep2]);
-
-    if (errorState) {
-        return <div>Error: {errorState.error.message}</div>;
-    }
-
-    // Now safe to use derivedValue, do table lookups, etc.
-}
-```
-
-## Data Processing Optimizations
-
-When iterating over large record sets inside `useMemo`:
-
-- **Use `Set` for lookups** — `set.has(value)` is O(1) vs `array.includes(value)` O(n)
-- **Pre-compute loop-invariant values** — e.g., `const startTime = start.getTime()` once, not
-  inside every iteration
-- **Combine passes** — build maps and compute totals in a single loop instead of separate
-  filter/map/reduce chains
-- **Use `for...of` with `continue`** — clearer early-exit semantics than `.forEach` with `return`
-
-```tsx
-const data = useMemo(() => {
-    const typesSet = new Set(selectedTypes);          // O(1) lookups
-    const startTime = periodStart.getTime();          // computed once
-    const endTime = periodEnd.getTime();
-    const counts = new Map<string, number>();
-    let total = 0;
-
-    for (const record of records) {
-        const type = extractValue(record.getCellValue(typeField));
-        if (!typesSet.has(type)) continue;            // early exit
-
-        const ts = new Date(record.getCellValue(dateField) as string).getTime();
-        if (ts < startTime || ts > endTime) continue; // inline comparison
-
-        const id = record.id;
-        const count = (counts.get(id) ?? 0) + 1;
-        counts.set(id, count);
-        total += 1;                                   // accumulate in same pass
-    }
-
-    return {counts, total};
-}, [records, selectedTypes, periodStart, periodEnd, typeField, dateField]);
-```
-
-## Utility Functions
-
-Place pure helper functions (those that don't use hooks or component state) at module scope, not
-inside components. This avoids recreating function objects on every render and makes them
-automatically available for reuse.
-
-```tsx
-// Module scope — created once
-function getStatusColor(percentage: number): string {
-    if (percentage >= 100) return 'bg-green-green';
-    if (percentage >= 50) return 'bg-yellow-yellow';
-    return 'bg-red-red';
-}
-
-// Inside component — only use hooks and JSX
-export const ProgressBar = memo(function ProgressBar({percentage}: {percentage: number}) {
-    return <div className={getStatusColor(percentage)} />;
-});
-```
+If a function doesn't use hooks or component state, move it outside the component so it isn't
+recreated each render.

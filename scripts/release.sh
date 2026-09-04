@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 
 # Release script for Airtable Interface Extension
-# Combines: git commit, npm version bump, and block release
+# Combines: npm version bump, git tag, and block release
 #
-# Usage: npm run release:patch -- "commit message"
-#        npm run release:minor -- "commit message"
-#        npm run release:major -- "commit message"
+# Usage: npm run release:patch -- "release message"
+#        npm run release:minor -- "release message"
+#        npm run release:major -- "release message"
 #
 # If no message is provided, you will be prompted for one.
+#
+# Commit your work BEFORE running this — the script refuses to run on a dirty
+# working tree so that unrelated changes cannot ride along in the release.
 
 set -e
 
@@ -39,18 +42,29 @@ echo "  Message: $MESSAGE"
 echo "  Version bump: $VERSION_TYPE"
 echo ""
 
-# Stage all changes
-echo "Staging changes..."
-git add -A
-
-# Check if there are changes to commit
-if git diff --cached --quiet; then
-    echo "No changes to commit. Proceeding with version bump and release..."
-else
-    # Commit changes
-    echo "Committing changes..."
-    git commit -m "$MESSAGE"
+# Refuse to release from a dirty working tree.
+#
+# This step used to `git add -A` and commit everything, which swept unrelated
+# changes into the release commit — lockfile churn from a local `npm install`,
+# half-finished edits, stray scratch files. Releases are cut from a committed
+# state instead; see the Release Flow section of CLAUDE.md.
+echo "Checking working tree..."
+if ! git diff --quiet || ! git diff --cached --quiet; then
+    echo ""
+    echo "Error: working tree has uncommitted changes:"
+    echo ""
+    git status --short -uno | sed 's/^/    /'
+    echo ""
+    echo "Commit or stash them, then re-run the release."
+    exit 1
 fi
+
+UNTRACKED="$(git ls-files --others --exclude-standard)"
+if [ -n "$UNTRACKED" ]; then
+    echo "  Note: untracked files present; they are not part of this release:"
+    echo "$UNTRACKED" | sed 's/^/    /'
+fi
+echo "  Working tree clean."
 
 # Bump version (creates a new commit and tag)
 echo "Bumping version ($VERSION_TYPE)..."

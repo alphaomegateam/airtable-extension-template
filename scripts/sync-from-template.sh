@@ -51,7 +51,8 @@ drift=()
 
 # Compare one file; record it if it differs or is missing locally.
 compare_file() {
-    local rel="$1" src="$TMP/template/$rel"
+    local rel="$1"
+    local src="$TMP/template/$rel"
     [ -f "$src" ] || return 0
     if [ ! -f "$rel" ]; then
         drift+=("$rel (missing locally)")

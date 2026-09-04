@@ -1,3 +1,6 @@
+/** A date-only value with no time component, e.g. "2026-09-01". */
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 export interface WeekOption {
     startDate: Date;
     endDate: Date;
@@ -35,10 +38,30 @@ export function formatDateForAirtable(date: Date): string {
     return `${year}-${month}-${day}`;
 }
 
-/** Parse a YYYY-MM-DD string as local midnight (avoids UTC timezone shift). */
-export function parseLocalDate(dateStr: string): Date {
-    const [y, m, d] = dateStr.split('-').map(Number);
-    return new Date(y, m - 1, d);
+/**
+ * Parse an Airtable date value into a local Date at midnight.
+ *
+ * A date-only string is parsed as UTC midnight by `new Date()`, per the
+ * ECMAScript spec — which is the previous day at any negative UTC offset. Every
+ * comparison in these extensions uses local getters, so parse as local to match.
+ * See `.claude/rules/dates.md`.
+ *
+ * Accepts both date-only strings ("2026-09-01") and full ISO timestamps.
+ * Returns null for anything unparseable.
+ */
+export function parseLocalDate(dateStr: string | null | undefined): Date | null {
+    if (!dateStr) return null;
+
+    // Date-only — construct directly in local time
+    if (DATE_ONLY_RE.test(dateStr)) {
+        const [y, m, d] = dateStr.split('-').map(Number);
+        return new Date(y, m - 1, d);
+    }
+
+    // Full ISO timestamp — a real instant; normalize to local midnight
+    const parsed = new Date(dateStr);
+    if (isNaN(parsed.getTime())) return null;
+    return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
 }
 
 /**
